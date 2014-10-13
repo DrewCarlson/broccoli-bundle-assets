@@ -21,12 +21,12 @@ var helpers = require('broccoli-kitchen-sink-helpers');
 //
 // This plugin does not account for alternative stylesheets, or media queries
 // in link-tag attributes.
-var BundleAssets = function(tree, preserve) {
+var BundleAssets = function(tree, subjects) {
     if (!(this instanceof BundleAssets))
-        return new BundleAssets(tree, preserve);
+        return new BundleAssets(tree, subjects);
 
     this.tree = tree;
-    this.preserve = preserve || [];
+    this.subjects = subjects || [];
 };
 BundleAssets.prototype = Object.create(Writer.prototype);
 
@@ -47,18 +47,18 @@ BundleAssets.prototype.write = function(readTree, dst) {
                 return mkdirp.sync(o);
 
             // Process HTML files.
-            if (htmlRe.test(p))
+            if (htmlRe.test(p) && ~self.subjects.indexOf(p)) {
                 return self.processHtml(i, o, src);
-
-            // Discard JS and CSS files.
-            var match = self.preserve.some(function(re) {
-                return re.test(p);
-            });
-            if (match || !discardRe.test(p))
-                return helpers.copyPreserveSync(i, o);
+            } else {
+                return self.preserveHtml(i, o, src);
+            }
         });
     });
 };
+
+BundleAssets.prototype.preserveHtml = function(i, o, iRoot) {
+    fs.writeFileSync(o, fs.readFileSync(i, 'utf-8'));
+}
 
 BundleAssets.prototype.processHtml = function(i, o, iRoot) {
     var file, tag;
@@ -105,11 +105,8 @@ BundleAssets.prototype.processHtml = function(i, o, iRoot) {
 
         var file = name + '.js';
         var data = files.map(function(f) { return f.data; }).join('\n');
-        fs.writeFileSync(path.join(oBase, file), data);
 
-        var tag = $('<script/>')
-            .attr('src', file);
-        $('body').append(tag);
+        $('head').append("<script type='text/javascript'>" + data + "</script>");
     });
 
     // Bundle all css content and create a new link tag.
@@ -128,12 +125,8 @@ BundleAssets.prototype.processHtml = function(i, o, iRoot) {
                 return 'url(' + JSON.stringify(ref) + ')';
             });
         }).join('\n');
-        fs.writeFileSync(path.join(oBase, file), data);
 
-        var tag = $('<link/>')
-            .attr('rel', 'stylesheet')
-            .attr('href', file);
-        $('head').append(tag);
+        $('head').append("<style type='text/css'>" + data + "</style>");
     });
 
     // Write processed HTML.
